@@ -128,8 +128,8 @@ public:
       if(word == TK_END) break;
       sentence.append(word);
       sentence.append(" ");
-      LOG("Language >> generate_sentence(): " << sentence);
     }
+    LOG("Language >> generate_sentence(): " << sentence);
     sentence.erase(sentence.end(), sentence.end());
     sentence.append("\n");
     return sentence;
@@ -168,7 +168,7 @@ private:
 
       if(itr == (*list).end()){ // if the word in a list is NOT found, will add a new Word.
         (*list).push_back(Word(next_token));
-        LOG("Language >> Learn_sentence(): new word");
+        //LOG("Language >> Learn_sentence(): new word");
         break;
 
       }else if((*itr).get_word() == next_token){ // if the word in a list is found, increment it's count.
@@ -184,7 +184,7 @@ private:
 
       if(itr == (*list).end()){ // if the word in a list is NOT found, will add a new Word.
         (*list).push_back(Word(next_token, count));
-        LOG("Language >> Learn_sentence(): new word");
+        //LOG("Language >> Learn_sentence(): new word");
         break;
 
       }else if((*itr).get_word() == next_token){ // if the word in a list is found, increment it's count.
@@ -233,12 +233,10 @@ private:
     if(it != dictionary.end()){
       int total_count = list_total_count(&((*it).second));
       int r_count = round(total_count * rnd);
-      LOG(r_count);
       int count = 0;
       list<Word>::iterator itr;
       for(itr = (*it).second.begin(); itr != (*it).second.end(); itr++){
         count += (*itr).get_count();
-        LOG((*itr).get_word());
         if(r_count <= count) break;
       }
 
@@ -365,14 +363,93 @@ private:
 };
 
 /*
+ * Will update when a tm is sent to it then if it is an appropriate time to send
+ * a message then it will queue a message using a MessageSender.
+ */
+class WordHandler{
+  Schedule *m_schedule; // message sending schedule.
+  MessageSender *messanger; // messanger for the window.
+  int interval_min; // minimum message interval. in milliseconds. 300000 for 5 mins.
+  int interval_max; // maximum message interval. in milliseconds. 300000 for 5 mins.
+  int counter; // used to count how much time is left for the next message.
+  int next_counter; // the randomly generated interval.
+  tm previous; // used to store the tm when the previous call happened.
+  std::mt19937 generator;
+
+
+public:
+  /**
+   * Constructor
+   */
+  WordHandler(Schedule *t_schedule, MessageSender *ms_tmp, int t_interval1, int t_interval2){
+    m_schedule = t_schedule;
+    messanger = ms_tmp;
+    interval_min = t_interval1;
+    LOG("WordHandler >> min: " << interval_min);
+    interval_max = t_interval2;
+    LOG("WordHandler >> max: " << interval_max);
+    counter = 999999999;
+    time_t now_c = chrono::system_clock::to_time_t(chrono::system_clock::now());
+    previous = *localtime(&now_c);
+    SetNextCounter();
+  }
+
+  WordHandler(){}
+
+  /**
+   * Takes tm of the current time. Then queues a message to the messageSender() if current time in schedule is true.
+   * tm *time_tm: the tm for the current time. Can be taken from Timer().
+   * string s: the messange to be queued.
+   */
+  void update(tm *time_tm, string s){
+    LOG("WordHandler >> update(), id: " << this);
+    if((*m_schedule).getSchedule(time_tm->tm_wday, 4 * time_tm->tm_hour + time_tm->tm_min / 15)){
+      if(CheckInterval(time_tm)){
+        (*messanger).queueMessage(s);
+      }
+    }else{
+      counter = 99999999; // resets timer when schedule is over.
+    }
+
+    previous = *time_tm;
+  }
+
+private:
+  bool CheckInterval(tm *time_tm){
+    int d_day = ((time_tm->tm_wday - (&previous)->tm_wday) % 7 + 7) % 7;
+    int d_hour = ((time_tm->tm_hour - (&previous)->tm_hour) % 24 + 24) % 24;
+    int d_min = ((time_tm->tm_min - (&previous)->tm_min) % 60 + 60) % 60;
+    int d_sec = ((time_tm->tm_sec - (&previous)->tm_sec) % 60 + 60 % 60);
+
+    counter += d_day * 86400000 + d_hour * 3600000 + d_min * 60000 + d_sec * 1000;
+    LOG("WordHandler >> counter: " << counter<< ", id: " << this);
+
+    if(counter > next_counter){
+      counter = 0;
+      SetNextCounter();
+      return true;
+    }
+
+    return false;
+  }
+
+  void SetNextCounter(){
+    next_counter = interval_min + generator() % (interval_max - interval_min);
+    LOG("WordHandler >> SetNextCounter(): " << next_counter);
+  }
+};
+
+/*
  * Will open settings.txt to interpret it and set up a MessageSender and Language
  * After setting them up, will create a Timer and begin the operation.
  */
 class initializer{
   Language language;
-  MessageSender *ms;
+  WordHandler wh;
   bool dump = false;
   bool is_dictionary = false;
+  Schedule schedule;
+  MessageSender *ms;
 
 public:
   initializer(){
@@ -396,7 +473,7 @@ public:
       timer_clock.waitNext();
       string msg = language.generate_sentence();
       msg.append("\n");
-      (*ms).queueMessage(msg);
+      wh.update(timer_clock.getTM(), msg);
       (*ms).sendToWindow();
     }
   }
@@ -417,13 +494,14 @@ private:
     }
   }
 
-  void getGenerator(string line){
+  void getGenerator(string line, Schedule *s){
     stringstream ss(line);
     string dummy, sample_path, window;
     int min, max;
     ss >> dummy >> sample_path >> window >> min >> max;
     language.learn_file(sample_path, is_dictionary);
     ms = new MessageSender(DELAY, MAX_WINDOWS, window);
+    wh  = WordHandler(s, ms, min, max);
   }
   /*
    * Opens file to interpret it as a setting file for this program.
@@ -440,7 +518,7 @@ private:
           switch(line[0]){
             case '>':
               current_schedule = new Schedule();
-              getGenerator(line);
+              getGenerator(line, current_schedule);
               break;
             case '+':
               current_wday = getDay(line);
