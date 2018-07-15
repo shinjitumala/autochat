@@ -77,8 +77,8 @@ private:
         sendKey(13, false);
       }else if(s[i] == '!'){
         sendKey(49, true);
-      }else if(s[i] == '@'){
-        sendKey(50, true);
+      }else if(s[i] == '@'){ // no mentioning
+        //sendKey(50, true);
       }else if(s[i] == '#'){
         sendKey(51, true);
       }else if('$' == s[i]){
