@@ -57,7 +57,7 @@ public:
     }else{
       LOG("MessageSender >> sendToWindow() not found, Window: " << windowName << ", id: " << this);
     }
-    ActivateWindow("paycheck.exe");
+    ActivateWindow("autochat.exe");
     return ret;
   }
 
@@ -73,17 +73,77 @@ private:
         sendKey(s[i] - 32, false);
       }else if('A' <= s[i] && 'Z' >= s[i]){
         sendKey(s[i], true);
-      }else if(s[i] == ';'){ // ';' acts as enter key.
+      }else if(s[i] == '\n'){ // enter key.
         sendKey(13, false);
+      }else if(s[i] == '!'){
+        sendKey(49, true);
+      }else if(s[i] == '@'){
+        sendKey(50, true);
+      }else if(s[i] == '#'){
+        sendKey(51, true);
       }else if('$' == s[i]){
         sendKey(52, true);
+      }else if(s[i] == '%'){
+        sendKey(53, true);
+      }else if(s[i] == '^'){
+        sendKey(54, true);
+      }else if(s[i] == '&'){
+        sendKey(55, true);
+      }else if(s[i] == '*'){
+        sendKey(56, true);
+      }else if(s[i] == '('){
+        sendKey(57, true);
+      }else if(s[i] == ')'){
+        sendKey(48, true);
       }else if('-' == s[i]){
         sendKey(109, false);
+      }else if('_' == s[i]){
+        sendKey(109, true);
+      }else if('=' == s[i]){
+        sendKey(110, false);
+      }else if('+' == s[i]){
+        sendKey(110, true);
       }else if('0' <= s[i] && '9' >= s[i]){
         sendKey(s[i], false);
+      }else if('`' == s[i]){
+        sendKey(192, false);
+      }else if('~' == s[i]){
+        sendKey(192, true);
+      }else if('[' == s[i]){
+        sendKey(219, false);
+      }else if('{' == s[i]){
+        sendKey(219, true);
+      }else if('\\' == s[i]){ // not working.
+        sendKey(220, false);
+      }else if('|' == s[i]){
+        sendKey(220, true);
+      }else if(']' == s[i]){
+        sendKey(221, false);
+      }else if('}' == s[i]){
+        sendKey(221, true);
+      }else if(';' == s[i]){
+        sendKey(186, false);
+      }else if(':' == s[i]){
+        sendKey(186, true);
+      }else if('\'' == s[i]){
+        sendKey(222, false);
+      }else if('\"' == s[i]){
+        sendKey(222, true);
+      }else if(',' == s[i]){
+        sendKey(188, false);
+      }else if('<' == s[i]){
+        sendKey(188, true);
+      }else if('.' == s[i]){
+        sendKey(190, false);
+      }else if('>' == s[i]){
+        sendKey(190, true);
+      }else if('/' == s[i]){
+        sendKey(191, false);
+      }else if('?' == s[i]){
+        sendKey(191, true);
       }else if('\0' == s[i]){
         // do nothing.
-      }else if('\'' == s[i]){ // ' acts as space.
+      }else if(' ' == s[i]){
         sendKey(32, false);
       }else{
         LOG("MessageSender() >> invalid character: " << s[i] <<". skipped.");

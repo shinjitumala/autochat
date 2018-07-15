@@ -24,6 +24,10 @@ using namespace std;
 #define TK_START "START_OF_SENTENCE_UD8a6TXfemyfJItNEJR7"
 #define TK_END "END_OF_SENTENCE_NKlykNp6QsY4u3XF2V2R"
 
+string SETTINGS_PATH = "settings.txt";
+int UPDATE_INTERVAL = 5000;
+int DELAY = 50;
+int MAX_WINDOWS = 16;
 
 /**
  * A class used in Language. Used to count how many times a word was used after a word.
@@ -261,13 +265,215 @@ private:
   }
 };
 
-int main (){
-  //DEBUG = true;
-  Language penis = Language();
-  penis.learn_file("filtered\\sia.txt");
-  cout << penis.show_dictionary();
-  for(int i = 0; i < 20; i++){
-    cout << penis.generate_sentence();
-    Sleep(100);
+/**
+ * Acts as the central control for all update operations.
+ */
+class Timer{
+  time_t now_c;
+  int wait_time; // the time to wait between updates. in milliseconds. recommended to set it above 60000 (60 sec).
+
+public:
+  /**
+   * Constructor
+   */
+  Timer(int wait){
+    update();
+    wait_time = wait;
   }
+
+  /**
+   * Get the tm for the current time.
+   * tm return value: the tm of the current time.
+   */
+  tm *getTM(){
+    update();
+    return localtime(&now_c);
+  }
+
+  /**
+   * Waits until the next update cycle.
+   */
+  void waitNext(){
+    Sleep(wait_time);
+  }
+private:
+  /**
+   * Updates the time with the current time.
+   */
+  void update(){
+    now_c = chrono::system_clock::to_time_t(chrono::system_clock::now());
+  }
+};
+
+/*
+ * Will open settings.txt to interpret it and set up a MessageSender and Language
+ * After setting them up, will create a Timer and begin the operation.
+ */
+class initializer{
+  Language language;
+  MessageSender *ms;
+
+public:
+  initializer(){
+    language = Language();
+  }
+  void begin(){
+    cout << "Building dictionary. Please wait..." << endl;
+    openSettings(SETTINGS_PATH);
+    cout << "Done. Starting operation." << endl;
+    Timer timer_clock = Timer(UPDATE_INTERVAL);
+    while(true){
+      timer_clock.waitNext();
+      string msg = language.generate_sentence();
+      msg.append("\n");
+      (*ms).queueMessage(msg);
+      (*ms).sendToWindow();
+    }
+  }
+
+private:
+  void getGenerator(string line){
+    stringstream ss(line);
+    string dummy, sample_path, window;
+    int min, max;
+    ss >> dummy >> sample_path >> window >> min >> max;
+    language.learn_file(sample_path);
+    ms = new MessageSender(DELAY, MAX_WINDOWS, window);
+  }
+  /*
+   * Opens file to interpret it as a setting file for this program.
+   * string path: settings file path.
+   */
+  void openSettings(string path){
+    string line;
+    ifstream settings (path);
+    if(settings.is_open()){
+      Schedule *current_schedule = NULL;
+      int current_wday = -1;
+      while(getline(settings, line)){
+        if(!(line[0] == '/' && line[1] == '/') || line[0] == '\n'){// skips line if it starts with "//" or "\n".
+          switch(line[0]){
+            case '>':
+              current_schedule = new Schedule();
+              getGenerator(line);
+              break;
+            case '+':
+              current_wday = getDay(line);
+              break;
+            case '=':
+              setTime(line, current_wday, current_schedule);
+              break;
+            case 'G':
+              setGlobal(line);
+              break;
+            default:
+              LOG("initializer >> unknown line. Skipping...");
+              break;
+          }
+        }
+      }
+      settings.close();
+    }else{
+      LOG("initializer() >> unable to open settings file. Closing program...");
+      Sleep(5000);
+      exit(1);
+    }
+  }
+
+  /**
+   * Reads the given line to change the global variables.
+   * string line: given line.
+   */
+  void setGlobal(string line){
+    stringstream ss(line);
+    char dummy;
+    string str;
+    int arg;
+    ss >> str >> dummy >> arg;
+    if(str == "G_InputDelay"){
+      DELAY = arg;
+    }else if (str == "G_MaxWindows"){
+      MAX_WINDOWS = arg;
+    }else if(str == "G_UpdateInterval"){
+      UPDATE_INTERVAL = arg;
+    }
+  }
+
+  /**
+   * Reads the given line to modify the given schedule accordingly.
+   * string line: given line.
+   * Schedule *schedule: the schedule to be modified.
+   */
+  void setTime(string line, int wday, Schedule *schedule){
+    if(wday == -1 || schedule == NULL) error();
+    stringstream ss(line);
+    int s_h, s_m, e_h, e_m;
+    char dummy;
+    ss >> dummy >> s_h >> dummy >> s_m >> dummy >> e_h >> dummy >> e_m;
+    s_h = s_h % 24; e_h = e_h % 24; s_m = s_m / 15 * 15; e_m = e_m / 15 * 15;
+
+    int start, end;
+    start = s_h * 4 + s_m / 15; end = e_h * 4 + e_m / 15;
+    for(int i = start; i < end; i++){
+      (*schedule).setSchedule(wday, i, true);
+    }
+  }
+
+  /**
+   * Reads the given line to return the tm_wday vaule of the line.
+   * string line: given line.
+   * int return value: corresponding tm_wday value.
+   */
+  int getDay(string line){
+    if(line == "+ Su"){
+      return 0;
+    }else if(line == "+ Mo"){
+      return 1;
+    }else if(line == "+ Tu"){
+      return 2;
+    }else if(line == "+ We"){
+      return 3;
+    }else if(line == "+ Th"){
+      return 4;
+    }else if(line == "+ Fr"){
+      return 5;
+    }else if(line == "+ Sa"){
+      return 6;
+    }else{
+      LOG("initializer >> error at line: \"" << line << "\". Closing program...");
+      Sleep(5000);
+      exit(1);
+      return -1;
+    }
+  }
+
+  /**
+   * Call this to exit the program when a error occurs while reading settings.txt.
+   */
+  void error(){
+    LOG("initializer >> fatal error. Closing program...");
+    Sleep(5000);
+    exit(1);
+  }
+};
+
+int main (int argc, char *argv[]){
+  cout << "autochat.exe is running..." << endl;
+  cout << "closing this during a alt tab operation is dangerous." << endl;
+  cout << "otherwise feel free to close this window or press \"Ctrl + C\" to stop anytime." << endl;
+  if(argc > 1){
+    for(int i = 1; i < argc; i++){
+      if(strcmp(argv[i], "-d") == 0){
+        DEBUG = true;
+        LOG("STARTED ON DEBUG MODE...");
+      }else{
+        SETTINGS_PATH = argv[i];
+      }
+    }
+  }
+
+  initializer ass = initializer();
+  ass.begin();
+
+  return 0;
 }
