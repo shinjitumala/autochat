@@ -51,6 +51,11 @@ public:
     count = 0;
   }
 
+  Word(string s, int i){
+    word = s;
+    count = i;
+  }
+
   /** increases the word count by 1 */
   void add(){
     count++;
@@ -86,17 +91,24 @@ public:
   /**
    * Learns a language from a sample text file.
    * string path: path to the sample text file.
+   * bool dictionary: will read learning file as a dictionary file if true.
    */
-  void learn_file(string path){
+  void learn_file(string path, bool is_dictionary){
     ifstream sample(path);
     string line;
     if(sample.is_open()){
       while(getline(sample, line)){
-        if(line != "") learn_sentence(line);
+        if(!is_dictionary){
+          if(line != "") learn_sentence(line);
+        }else{
+          if(line != "") read_dictionary_line(line);
+        }
       }
       sample.close();
     }else{
-      LOG("Language >> learn_file(): error reading sample file.");
+      LOG("Language >> learn_file(): error reading sample file. Closing program...");
+      Sleep(5000);
+      exit(1);
     }
   }
 
@@ -111,13 +123,12 @@ public:
     string sentence;
     double rnd;
     while(true){
-      LOG("word: " << word);
       rnd = (double) generator() / generator.max();
       word = generate_next(word, rnd);
       if(word == TK_END) break;
       sentence.append(word);
       sentence.append(" ");
-      LOG("sentence: " << sentence);
+      LOG("Language >> generate_sentence(): " << sentence);
     }
     sentence.erase(sentence.end(), sentence.end());
     sentence.append("\n");
@@ -157,6 +168,22 @@ private:
 
       if(itr == (*list).end()){ // if the word in a list is NOT found, will add a new Word.
         (*list).push_back(Word(next_token));
+        LOG("Language >> Learn_sentence(): new word");
+        break;
+
+      }else if((*itr).get_word() == next_token){ // if the word in a list is found, increment it's count.
+        (*itr).add();
+        LOG("Language >> Learn_sentence(): add word");
+        break;
+      }
+    }
+  }
+  /** will also add the count when adding the word */
+  void list_add_word(list<Word> *list, string next_token, int count){
+    for(auto itr = (*list).begin(); true ; itr++){
+
+      if(itr == (*list).end()){ // if the word in a list is NOT found, will add a new Word.
+        (*list).push_back(Word(next_token, count));
         LOG("Language >> Learn_sentence(): new word");
         break;
 
@@ -219,6 +246,38 @@ private:
     }else{
       LOG("Language >> generate_next() error.");
       exit(1);
+    }
+  }
+
+  /**
+   * Reads one line from a dictionary file.
+   * string s: a line.
+   */
+  void read_dictionary_line(string s){
+    stringstream ss(s);
+    string token, f_token;
+    list<string> tokens;
+    int count;
+    map<string, list<Word>>::iterator it;
+
+    while(getline(ss, token, ' ')){ // divide string by space.
+      tokens.push_back(token);
+    }
+
+    f_token = tokens.front();
+    tokens.pop_front();
+    f_token.erase(f_token.end() - 1);
+
+    list<Word> t_list;
+    dictionary[f_token] = t_list;
+
+    while(!tokens.empty()){
+      token = tokens.front();
+      tokens.pop_front();
+      count = atoi(tokens.front().c_str());
+      tokens.pop_front();
+      it = dictionary.find(f_token);
+      list_add_word(&((*it).second), token, count);
     }
   }
 
@@ -312,14 +371,25 @@ private:
 class initializer{
   Language language;
   MessageSender *ms;
+  bool dump = false;
+  bool is_dictionary = false;
 
 public:
   initializer(){
     language = Language();
   }
-  void begin(){
+
+  /**
+   * begin operation.
+   * bool dump: will dump the dictionary file if true.
+   * string dump_path: dump dictionary to this path.
+   * bool dictionary: will read learning file as a dictionary file if true.
+   */
+  void begin(bool dump, string dump_path, bool dictionary){
+    is_dictionary = dictionary;
     cout << "Building dictionary. Please wait..." << endl;
     openSettings(SETTINGS_PATH);
+    if(dump) dump_dictionary(dump_path);
     cout << "Done. Starting operation." << endl;
     Timer timer_clock = Timer(UPDATE_INTERVAL);
     while(true){
@@ -332,12 +402,27 @@ public:
   }
 
 private:
+  /**
+   * Will create a dictionary file at the given file path.
+   * string path: file path.
+   */
+  void dump_dictionary(string path){
+    ofstream file(path);
+    if(file.is_open()){
+      file << language.show_dictionary();
+      file.close();
+    }else{
+      LOG("Language >> dump_dictionary(): Error creating output file. File was not created.");
+      return;
+    }
+  }
+
   void getGenerator(string line){
     stringstream ss(line);
     string dummy, sample_path, window;
     int min, max;
     ss >> dummy >> sample_path >> window >> min >> max;
-    language.learn_file(sample_path);
+    language.learn_file(sample_path, is_dictionary);
     ms = new MessageSender(DELAY, MAX_WINDOWS, window);
   }
   /*
@@ -461,19 +546,40 @@ int main (int argc, char *argv[]){
   cout << "autochat.exe is running..." << endl;
   cout << "closing this during a alt tab operation is dangerous." << endl;
   cout << "otherwise feel free to close this window or press \"Ctrl + C\" to stop anytime." << endl;
+
+  initializer ass = initializer();
+
+  string dump_path;
+  bool dump, is_dictionary;
   if(argc > 1){
     for(int i = 1; i < argc; i++){
       if(strcmp(argv[i], "-d") == 0){
         DEBUG = true;
         LOG("STARTED ON DEBUG MODE...");
-      }else{
+      }else if(strcmp(argv[i], "-o") == 0){
+        cout << "Creating dictionary file in dictionary\\" << argv[i + 1] << endl;
+        dump_path = "dictionary\\";
+        dump_path.append(string(argv[i + 1]));
+        dump = true;
+        i++;
+      }else if(strcmp(argv[i], "--dictionary") == 0){
+        cout << "Sample file will be read as a dictionary file." << endl;
+        is_dictionary = true;
+      }else if(i == argc - 1){
         SETTINGS_PATH = argv[i];
+        cout << "Settings file path set to: " << SETTINGS_PATH << endl;
+      }else{
+        cout << "Usage: autochat.exe [options] \"path to specific settings file. will read settings.txt if not set\"" << endl;
+        cout << "Options:" << endl;
+        cout << "   -d : debugmode on." << endl;
+        cout << "   -o \"filepath\" : dump dictionary file to path." << endl;
+        cout << "   --dictionary : will read sample file as a dictionary file." << endl;
+        return 0;
       }
     }
   }
 
-  initializer ass = initializer();
-  ass.begin();
+  ass.begin(dump, dump_path, is_dictionary);
 
   return 0;
 }
